@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # This script is the "Best ChatGPT clone that $100 can buy",
-# It is designed to run in ~4 hours on 8XH100 node at $3/GPU/hour.
+# It is designed to run in ~4 hours on 4xB200 node.
 
 # 1) Example launch (simplest):
 # bash speedrun.sh
@@ -50,7 +50,11 @@ python -m nanochat.report reset
 
 # Install Rust / Cargo
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+if [ -n "$FISH_VERSION" ]; then
+    source "$HOME/.cargo/env.fish"
+else
 source "$HOME/.cargo/env"
+fi
 
 # Build the rustbpe Tokenizer
 uv run maturin develop --release --manifest-path rustbpe/Cargo.toml
@@ -83,10 +87,10 @@ echo "Waiting for dataset download to complete..."
 wait $DATASET_DOWNLOAD_PID
 
 # Number of processes/GPUs to use
-NPROC_PER_NODE=8
+NPROC_PER_NODE=4
 
 # pretrain the d20 model
-torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.base_train -- --depth=20 --run=$WANDB_RUN
+torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.base_train -- --depth=20 --run=$WANDB_RUN --device_batch_size=64
 # evaluate the model on a larger chunk of train/val data and draw some samples
 torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.base_loss
 # evaluate the model on CORE tasks
@@ -100,19 +104,19 @@ torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.base_eval
 curl -L -o $NANOCHAT_BASE_DIR/identity_conversations.jsonl https://karpathy-public.s3.us-west-2.amazonaws.com/identity_conversations.jsonl
 
 # run midtraining and eval the model
-torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.mid_train -- --run=$WANDB_RUN
+torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.mid_train -- --run=$WANDB_RUN --device_batch_size=64
 torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.chat_eval -- -i mid
 
 # -----------------------------------------------------------------------------
 # Supervised Finetuning (domain adaptation to each sequence all by itself per row)
 
 # train sft and re-eval right away (should see a small bump)
-torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.chat_sft -- --run=$WANDB_RUN
+torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.chat_sft -- --run=$WANDB_RUN --device_batch_size=64
 torchrun --standalone --nproc_per_node=$NPROC_PER_NODE -m scripts.chat_eval -- -i sft
 
 # chat with the model over CLI! Leave out the -p to chat interactively
 # python -m scripts.chat_cli -p "Why is the sky blue?"
-
+python -m scripts.chat_cli
 # even better, chat with your model over a pretty WebUI ChatGPT style
 # python -m scripts.chat_web
 
