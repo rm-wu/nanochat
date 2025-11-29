@@ -211,6 +211,10 @@ def get_peak_flops_per_sec(device_type="cuda", ddp_world_size=1):
         # B300 Blackwell: estimated peak performance for bfloat16
         # Update this value with exact specs when available
         peak_flops_per_gpu = 1800e12  # 1800 TFLOPS for bfloat16
+    elif "b200" in gpu_name_lower:
+        # B200 Blackwell: rough current estimate for bfloat16 throughput.
+        # NOTE: Please update this constant if/when official specs change.
+        peak_flops_per_gpu = 1200e12  # 1200 TFLOPS for bfloat16 (approximate)
     elif "h100" in gpu_name_lower:
         # H100 SXM: 989 TFLOPS for bfloat16 without 2:4 sparsity
         peak_flops_per_gpu = 989e12
