@@ -180,6 +180,62 @@ def compute_cleanup():
     if is_ddp():
         dist.destroy_process_group()
 
+def get_peak_flops_per_sec(device_type="cuda", ddp_world_size=1):
+    """
+    Get the theoretical peak FLOPs per second for the GPU(s) being used.
+    Returns peak FLOPs in bfloat16 precision, multiplied by world size for distributed training.
+    
+    Args:
+        device_type: "cuda", "mps", or "cpu"
+        ddp_world_size: Number of GPUs in distributed training
+    
+    Returns:
+        Peak FLOPs per second (float)
+    """
+    if device_type != "cuda":
+        # For non-CUDA devices, return a default or 0
+        # CPU and MPS don't have well-defined peak FLOPs for this calculation
+        return 0.0
+    
+    if not torch.cuda.is_available():
+        return 0.0
+    
+    # Get GPU name from the first device
+    # In distributed training, all GPUs should be the same model
+    gpu_name = torch.cuda.get_device_name(0)
+    gpu_name_lower = gpu_name.lower()
+    
+    # Peak FLOPs per GPU in bfloat16 (TFLOPS * 1e12)
+    # Values are for bfloat16 precision without 2:4 sparsity
+    if "b300" in gpu_name_lower or "blackwell" in gpu_name_lower:
+        # B300 Blackwell: estimated peak performance for bfloat16
+        # Update this value with exact specs when available
+        peak_flops_per_gpu = 1800e12  # 1800 TFLOPS for bfloat16
+    elif "h100" in gpu_name_lower:
+        # H100 SXM: 989 TFLOPS for bfloat16 without 2:4 sparsity
+        peak_flops_per_gpu = 989e12
+    elif "a100" in gpu_name_lower:
+        # A100: ~312 TFLOPS for bfloat16
+        peak_flops_per_gpu = 312e12
+    elif "a800" in gpu_name_lower:
+        # A800: similar to A100
+        peak_flops_per_gpu = 312e12
+    else:
+        # Default to H100 value if GPU is unknown
+        # This is a reasonable fallback for most modern training GPUs
+        print0(f"Warning: Unknown GPU model '{gpu_name}', using H100 peak FLOPs (989 TFLOPS) as default")
+        peak_flops_per_gpu = 989e12
+    
+    # Multiply by world size for distributed training
+    total_peak_flops = peak_flops_per_gpu * ddp_world_size
+    
+    if ddp_world_size == 1:
+        print0(f"Detected GPU: {gpu_name}, using peak FLOPs: {peak_flops_per_gpu/1e12:.0f} TFLOPS")
+    else:
+        print0(f"Detected GPU: {gpu_name} (x{ddp_world_size}), using peak FLOPs: {total_peak_flops/1e12:.0f} TFLOPS total")
+    
+    return total_peak_flops
+
 class DummyWandb:
     """Useful if we wish to not use wandb but have all the same signatures"""
     def __init__(self):
